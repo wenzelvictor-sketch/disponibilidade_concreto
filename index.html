@@ -70,7 +70,7 @@
   .subtitle{ color:var(--muted); font-size:14.5px; margin-top:8px; max-width:660px; line-height:1.55; }
 
   .mode-toggle{
-    display:inline-flex; gap:4px; margin-top:18px; background:#0B1424; border:1px solid var(--border);
+    display:inline-flex; flex-wrap:wrap; gap:4px; margin-top:18px; background:#0B1424; border:1px solid var(--border);
     border-radius:999px; padding:4px;
   }
   .mode-toggle button{
@@ -83,13 +83,19 @@
   body.mode-sem .mode-toggle button.active{
     background:rgba(155,140,255,.16); color:#9B8CFF; box-shadow:inset 0 0 0 1px rgba(155,140,255,.4);
   }
+  body.mode-req .mode-toggle button.active{
+    background:rgba(242,169,59,.16); color:#F2A93B; box-shadow:inset 0 0 0 1px rgba(242,169,59,.4);
+  }
   .mode-toggle button:hover:not(.active){ color:var(--text); }
 
-  /* Esquema de cores diferenciado no modo "Sem Expurgo" (identidade visual do modo,
-     a régua de meta continua verde >=93% / vermelho <93% em ambos os modos) */
+  /* Esquema de cores diferenciado por modo (identidade visual do modo,
+     a régua de meta continua verde >=93% / vermelho <93% em todos os modos) */
   body.mode-sem{ --line: #9B8CFF; }
   body.mode-sem .eyebrow .dot{ background:#9B8CFF; box-shadow:0 0 8px #9B8CFF; }
   body.mode-sem .gridline{ background:linear-gradient(90deg, transparent, #9B8CFF, transparent); }
+  body.mode-req{ --line: #F2A93B; }
+  body.mode-req .eyebrow .dot{ background:#F2A93B; box-shadow:0 0 8px #F2A93B; }
+  body.mode-req .gridline{ background:linear-gradient(90deg, transparent, #F2A93B, transparent); }
 
   main{ padding:20px clamp(20px,4vw,64px) 0; display:flex; flex-direction:column; gap:22px; }
 
@@ -318,6 +324,7 @@
   <div class="mode-toggle" id="modeToggle">
     <button data-mode="com" class="active">Com Expurgo</button>
     <button data-mode="sem">Sem Expurgo</button>
+    <button data-mode="req" title="Necessidade = Qtd Requisitada (sem expurgo, PD replanejado apenas informativo)">Nec. = Requisição</button>
   </div>
 </header>
 
@@ -515,9 +522,52 @@ const ADMIN_PASSCODE = "disponibilidade2026";
 const META = 0.93;
 function metaColorHex(p){ return (p!==null && p!==undefined && p>=META) ? "#2FD9A8" : "#F0546B"; }
 
-/* Modo de visualização: "com" (com expurgo) ou "sem" (sem expurgo, PD replanejado) */
+/* Modo de visualização: "com" (com expurgo) | "sem" (sem expurgo, PD replanejado)
+   | "req" (Necessidade = Qtd Requisitada, sem expurgo, PD replanejado só informativo) */
 let VIEW_MODE = "com";
-function curMeses(){ return MESES[VIEW_MODE]; }
+
+/* O modo "req" é inteiramente derivado do modo "sem" (mesmo Estoque/Consumo/PD;
+   só muda a fórmula da Necessidade), então não precisa de dados próprios
+   persistidos — é recalculado em memória e cacheado em MESES.req. */
+function deriveReqModeRecord(semRec){
+  if(!semRec) return null;
+  const detail = semRec.detail.map(d=>{
+    const necessidade = d.requisicao || 0;
+    const necessidade_r = necessidade * (d.valor_unitario || 0);
+    const realizado_r_capado = necessidade_r > 0 ? Math.min(d.realizado_r, necessidade_r) : 0;
+    return Object.assign({}, d, {necessidade, necessidade_r, realizado_r_capado});
+  });
+  const empresaAgg = new Map();
+  detail.forEach(d=>{
+    if(!empresaAgg.has(d.empresa)) empresaAgg.set(d.empresa, {necR:0, realRCap:0});
+    const ea = empresaAgg.get(d.empresa);
+    ea.necR += d.necessidade_r; ea.realRCap += d.realizado_r_capado;
+  });
+  const empresas = [];
+  let totalNec=0, totalRea=0;
+  for(const [sigla, v] of empresaAgg){
+    empresas.push({sigla, disponibilidade: v.necR>0 ? v.realRCap/v.necR : null, necessidade_r: v.necR, realizado_r: v.realRCap});
+    totalNec += v.necR; totalRea += v.realRCap;
+  }
+  const total = totalNec>0 ? totalRea/totalNec : null;
+  return {key: semRec.key, label: semRec.label, source: semRec.source, total, empresas, detail};
+}
+function getReqRecord(key){
+  if(MESES.req[key]) return MESES.req[key];
+  const semRec = MESES.sem[key];
+  if(!semRec) return null;
+  const derived = deriveReqModeRecord(semRec);
+  MESES.req[key] = derived;
+  return derived;
+}
+function curMeses(){
+  if(VIEW_MODE === "req"){
+    const out = {};
+    MESES_ORDER.forEach(k=>{ const r = getReqRecord(k); if(r) out[k] = r; });
+    return out;
+  }
+  return MESES[VIEW_MODE];
+}
 
 /* ============================================================
    MAPEAMENTOS DE NEGÓCIO (espelham o pipeline Python)
@@ -812,7 +862,7 @@ async function computeMonth(monthKey, files, log){
    salvos apenas NESTE navegador, não compartilhados entre
    pessoas — ver aviso em STORAGE_BACKEND).
    ============================================================ */
-let MESES = {com:{}, sem:{}};
+let MESES = {com:{}, sem:{}, req:{}};
 let MESES_ORDER = [];
 let STORAGE_OK = true;
 let STORAGE_BACKEND = "none"; // "artifact" | "local" | "memory"
@@ -849,7 +899,7 @@ async function loadAllMonths(){
   let idxResult;
   try{ idxResult = await storage.get("meses_index", true); }catch(e){ idxResult=null; }
   MESES_ORDER = (idxResult && idxResult.value) ? JSON.parse(idxResult.value) : SEED_MESES.order.slice();
-  MESES = {com:{}, sem:{}};
+  MESES = {com:{}, sem:{}, req:{}};
   for(const key of MESES_ORDER){
     try{
       const rc = await storage.get("mes_data:com:"+key, true);
@@ -870,6 +920,7 @@ async function saveMonthBoth(monthKey, recordCom, recordSem){
   MESES_ORDER = idx;
   MESES.com[monthKey] = recordCom;
   MESES.sem[monthKey] = recordSem;
+  delete MESES.req[monthKey]; // força re-derivação do modo "req" para este mês
 }
 
 /* ============================================================
@@ -1316,9 +1367,10 @@ function renderSummaryTable(){
    MODO DE VISUALIZAÇÃO — com expurgo / sem expurgo
    ============================================================ */
 function setViewMode(mode){
-  if(mode !== "com" && mode !== "sem") return;
+  if(mode !== "com" && mode !== "sem" && mode !== "req") return;
   VIEW_MODE = mode;
   document.body.classList.toggle("mode-sem", mode === "sem");
+  document.body.classList.toggle("mode-req", mode === "req");
   document.querySelectorAll("#modeToggle button").forEach(b=>{
     b.classList.toggle("active", b.dataset.mode === mode);
   });
@@ -1544,7 +1596,8 @@ function wireAdminEvents(){
     MESES_ORDER = SEED_MESES.order.slice();
     MESES = {
       com: JSON.parse(JSON.stringify(SEED_MESES.modes.com.months)),
-      sem: JSON.parse(JSON.stringify(SEED_MESES.modes.sem.months))
+      sem: JSON.parse(JSON.stringify(SEED_MESES.modes.sem.months)),
+      req: {}
     };
   }
 
