@@ -67,11 +67,6 @@
     letter-spacing:-.01em; margin-top:10px; max-width:820px;
   }
   .subtitle{ color:var(--muted); font-size:14.5px; margin-top:8px; max-width:660px; line-height:1.55; }
-  .storage-banner{
-    margin-top:14px; padding:10px 14px; border-radius:8px; font-size:12.5px; line-height:1.5;
-    background:rgba(242,169,59,.1); border:1px solid rgba(242,169,59,.35); color:#F2CB8A; max-width:760px;
-  }
-  .storage-banner:empty{ display:none; margin:0; padding:0; border:none; }
 
   main{ padding:20px clamp(20px,4vw,64px) 0; display:flex; flex-direction:column; gap:22px; }
 
@@ -297,7 +292,6 @@
 <header>
   <div class="eyebrow"><span class="dot"></span>PAINEL DE DISPONIBILIDADE &middot; CADEIA DE SUPRIMENTOS</div>
   <h1>Disponibilidade Concreto - resultado mensal e acumulado</h1>
-  <div id="storageBanner" class="storage-banner"></div>
 </header>
 
 <main>
@@ -1438,20 +1432,6 @@ function wireAdminEvents(){
   });
 }
 
-function renderStorageBanner(){
-  const host = document.getElementById("storageBanner");
-  if(!host) return;
-  if(STORAGE_BACKEND === "artifact"){
-    host.innerHTML = "";
-    return;
-  }
-  if(STORAGE_BACKEND === "local"){
-    host.innerHTML = '⚠ Este site está hospedado fora do Claude — os meses enviados por aqui ficam salvos apenas <b>neste navegador</b>, não são compartilhados com outras pessoas da organização. Para uma base compartilhada, publique os arquivos calculados (ex.: JSON) num local acessível a todos.';
-    return;
-  }
-  host.innerHTML = '⚠ Armazenamento indisponível neste navegador (ex.: aba anônima) — os dados exibidos não serão salvos ao recarregar a página.';
-}
-
 /* ============================================================
    INIT
    ============================================================ */
@@ -1480,7 +1460,6 @@ function renderStorageBanner(){
   safe(renderAccumChart, "renderAccumChart");
   safe(renderSummaryTable, "renderSummaryTable");
   safe(()=>window.addEventListener("resize", debounce(()=>{ safe(renderAccumChart,"renderAccumChart(resize)"); },200)), "resizeListener");
-  safe(renderStorageBanner, "renderStorageBanner");
   safe(()=>{
     const btn = document.getElementById("pdfDownloadBtn");
     if(btn) btn.addEventListener("click", downloadSummaryPdf);
