@@ -361,7 +361,7 @@
   </section>
 
   <section class="panel accum-panel">
-    <div class="panel-title">Disponibilidade acumulada<small>todos os meses carregados</small></div>
+    <div class="panel-title">Disponibilidade acumulada<small>Σ Realizado ÷ Σ Necessidade, mês a mês</small></div>
     <div class="accum-canvas-wrap"><canvas id="accumChart"></canvas></div>
     <div class="legend-chips" id="legendChips"></div>
   </section>
@@ -1243,6 +1243,43 @@ function wireTableStaticEvents(){
 /* ============================================================
    RENDER — gráfico acumulado (Chart.js)
    ============================================================ */
+/* ============================================================
+   CÁLCULO DO ACUMULADO — soma dos resultados ÷ soma das necessidades,
+   mês a mês (ex.: acumulado de fev = (Realizado_jan+Realizado_fev) /
+   (Necessidade_jan+Necessidade_fev)), tanto no total geral quanto por empresa.
+   ============================================================ */
+function computeCumulativeSeries(){
+  const empresasSet = new Set();
+  MESES_ORDER.forEach(k=>{ (curMeses()[k]?.empresas||[]).forEach(e=>empresasSet.add(e.sigla)); });
+  const empresasList = Array.from(empresasSet).sort();
+
+  let runTotalNec = 0, runTotalRea = 0;
+  const runEmpNec = {}, runEmpRea = {};
+  empresasList.forEach(s=>{ runEmpNec[s]=0; runEmpRea[s]=0; });
+
+  const totalSeries = [];
+  const empresaSeries = {};
+  empresasList.forEach(s=> empresaSeries[s]=[]);
+
+  MESES_ORDER.forEach(k=>{
+    const rec = curMeses()[k];
+    if(rec){
+      rec.empresas.forEach(e=>{
+        runEmpNec[e.sigla] = (runEmpNec[e.sigla]||0) + (e.necessidade_r||0);
+        runEmpRea[e.sigla] = (runEmpRea[e.sigla]||0) + (e.realizado_r||0);
+        runTotalNec += (e.necessidade_r||0);
+        runTotalRea += (e.realizado_r||0);
+      });
+    }
+    totalSeries.push(runTotalNec>0 ? (runTotalRea/runTotalNec)*100 : null);
+    empresasList.forEach(s=>{
+      empresaSeries[s].push(runEmpNec[s]>0 ? (runEmpRea[s]/runEmpNec[s])*100 : null);
+    });
+  });
+
+  return {empresasList, totalSeries, empresaSeries};
+}
+
 function renderAccumChart(){
   if(window.ChartDataLabels && !window._datalabelsRegistered){
     Chart.register(window.ChartDataLabels);
@@ -1250,13 +1287,11 @@ function renderAccumChart(){
   }
   const ctx = document.getElementById("accumChart").getContext("2d");
   const labels = MESES_ORDER.map(k=> curMeses()[k] ? curMeses()[k].label : k);
-  const empresasSet = new Set();
-  MESES_ORDER.forEach(k=>{ (curMeses()[k]?.empresas||[]).forEach(e=>empresasSet.add(e.sigla)); });
-  const empresasList = Array.from(empresasSet).sort();
+  const { empresasList, totalSeries, empresaSeries } = computeCumulativeSeries();
 
   const datasets = [{
     label: "Total Geral",
-    data: MESES_ORDER.map(k=> (curMeses()[k] && curMeses()[k].total!==null) ? curMeses()[k].total*100 : null),
+    data: totalSeries,
     borderColor: "#E7ECF3", backgroundColor:"#E7ECF3", borderWidth:2.5, pointRadius:3, tension:.25, order:0, spanGaps:true,
     datalabels: {
       display: true,
@@ -1272,11 +1307,7 @@ function renderAccumChart(){
     const color = PALETTE[i % PALETTE.length];
     datasets.push({
       label: sigla,
-      data: MESES_ORDER.map(k=>{
-        const rec = curMeses()[k]; if(!rec) return null;
-        const e = rec.empresas.find(x=>x.sigla===sigla);
-        return (e && e.disponibilidade!==null) ? e.disponibilidade*100 : null;
-      }),
+      data: empresaSeries[sigla],
       borderColor: color, backgroundColor: color, borderWidth:1.5, pointRadius:2, tension:.25, hidden:true, order:1, spanGaps:true,
       datalabels: {display: false}
     });
@@ -1295,7 +1326,7 @@ function renderAccumChart(){
       plugins:{
         legend:{display:false},
         datalabels:{display:false},
-        tooltip:{callbacks:{label:c=> c.dataset.label+": "+(c.parsed.y!==null? c.parsed.y.toFixed(1).replace(".",",")+"%":"—")}}
+        tooltip:{callbacks:{label:c=> c.dataset.label+" (acum.): "+(c.parsed.y!==null? c.parsed.y.toFixed(1).replace(".",",")+"%":"—")}}
       }
     }
   });
