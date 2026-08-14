@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --bg: #0A101C;
@@ -217,6 +219,8 @@
     position:absolute; top:0; bottom:0; width:0;
     border-left:2px dashed rgba(231,236,243,.65); z-index:2;
   }
+  .pdf-btn-row{ display:flex; justify-content:flex-end; margin-top:16px; }
+  #pdfDownloadBtn:disabled{ opacity:.5; cursor:progress; }
 
   @media (max-width: 640px){
     header{ padding:26px 16px 6px; }
@@ -318,15 +322,20 @@
     </div>
   </section>
 
+  <section class="panel summary-panel">
+    <div class="panel-title">
+      Quadro resumo — disponibilidade por empresa e mês<small>clique numa empresa para filtrar o painel</small>
+    </div>
+    <div class="table-wrap" style="max-height:420px;" id="summaryTableHost"></div>
+    <div class="pdf-btn-row">
+      <button class="btn" id="pdfDownloadBtn">⬇ Baixar PDF (Resumo + Acumulado)</button>
+    </div>
+  </section>
+
   <section class="panel accum-panel">
     <div class="panel-title">Disponibilidade acumulada<small>todos os meses carregados</small></div>
     <div class="accum-canvas-wrap"><canvas id="accumChart"></canvas></div>
     <div class="legend-chips" id="legendChips"></div>
-  </section>
-
-  <section class="panel summary-panel">
-    <div class="panel-title">Quadro resumo — disponibilidade por empresa e mês<small>clique numa empresa para filtrar o painel</small></div>
-    <div class="table-wrap" style="max-height:420px;" id="summaryTableHost"></div>
   </section>
 
   <section class="panel" id="detailSection">
@@ -1241,6 +1250,77 @@ function renderSummaryTable(){
 function openModal(id){ document.getElementById(id).classList.add("open"); }
 function closeModal(id){ document.getElementById(id).classList.remove("open"); }
 
+/* ============================================================
+   EXPORTAR PDF — Quadro Resumo + Disponibilidade Acumulada
+   ============================================================ */
+async function downloadSummaryPdf(){
+  const btn = document.getElementById("pdfDownloadBtn");
+  if(!btn) return;
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Gerando PDF...";
+  try{
+    const { jsPDF } = window.jspdf;
+    const summaryEl = document.querySelector(".summary-panel");
+    const accumEl = document.querySelector(".accum-panel");
+    const bg = "#0A101C";
+
+    const canvasSummary = await html2canvas(summaryEl, {
+      backgroundColor: bg, scale: 2, useCORS: true,
+      windowWidth: document.documentElement.scrollWidth,
+      ignoreElements: (el)=> el.id === "pdfDownloadBtn" || (el.classList && el.classList.contains("pdf-btn-row"))
+    });
+    const canvasAccum = await html2canvas(accumEl, {
+      backgroundColor: bg, scale: 2, useCORS: true,
+      windowWidth: document.documentElement.scrollWidth
+    });
+
+    const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 28;
+    const usableWidth = pageWidth - margin*2;
+
+    pdf.setFillColor(10,16,28);
+    pdf.rect(0,0,pageWidth,pageHeight,"F");
+    pdf.setTextColor(231,236,243);
+    pdf.setFontSize(15);
+    pdf.text("Disponibilidade Concreto — Resumo e Acumulado", margin, 34);
+    pdf.setFontSize(9);
+    pdf.setTextColor(140,153,178);
+    const monthKey = document.getElementById("monthSelect")?.value || "";
+    const monthLbl = MESES[monthKey] ? MESES[monthKey].label : monthKey;
+    pdf.text(`Mês de referência: ${monthLbl}  ·  Gerado em ${new Date().toLocaleString("pt-BR")}`, margin, 48);
+
+    let y = 64;
+    const addCanvas = (canvas)=>{
+      const ratio = canvas.height / canvas.width;
+      let w = usableWidth;
+      let h = w * ratio;
+      if(y + h > pageHeight - margin){
+        pdf.addPage();
+        pdf.setFillColor(10,16,28);
+        pdf.rect(0,0,pageWidth,pageHeight,"F");
+        y = margin;
+      }
+      pdf.addImage(canvas.toDataURL("image/png"), "PNG", margin, y, w, h);
+      y += h + 22;
+    };
+
+    addCanvas(canvasSummary);
+    addCanvas(canvasAccum);
+
+    const fileMonth = monthKey || "atual";
+    pdf.save(`disponibilidade_concreto_${fileMonth}.pdf`);
+  }catch(e){
+    console.error("Falha ao gerar PDF:", e);
+    alert("Não foi possível gerar o PDF. Verifique sua conexão (as bibliotecas de exportação são carregadas via CDN) e tente novamente.");
+  }finally{
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
 function wireAdminEvents(){
   document.getElementById("adminTrigger").addEventListener("click", ()=> openModal("gateOverlay"));
   document.querySelectorAll("[data-close]").forEach(btn=> btn.addEventListener("click", ()=> closeModal(btn.dataset.close)));
@@ -1361,6 +1441,10 @@ function renderStorageBanner(){
   safe(renderSummaryTable, "renderSummaryTable");
   safe(()=>window.addEventListener("resize", debounce(()=>{ safe(renderAccumChart,"renderAccumChart(resize)"); },200)), "resizeListener");
   safe(renderStorageBanner, "renderStorageBanner");
+  safe(()=>{
+    const btn = document.getElementById("pdfDownloadBtn");
+    if(btn) btn.addEventListener("click", downloadSummaryPdf);
+  }, "pdfButtonWiring");
 })();
 
 })();
