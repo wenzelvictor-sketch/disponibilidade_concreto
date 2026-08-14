@@ -87,11 +87,20 @@ Não há dependências de build — é um arquivo estático único. As únicas b
 
 ## 5. Metodologia (referência rápida)
 
-- **Necessidade** = MIN(PD, Requisição)
+Este painel calcula **dois modos** de disponibilidade, alternáveis pelo seletor "Com Expurgo / Sem Expurgo" no topo da página (a mudança de esquema de cores — ciano para roxo — é só uma pista visual de qual modo está ativo; o critério de meta continua sempre verde ≥93% / vermelho <93% nos dois modos):
+
+**Com Expurgo** (padrão)
+- **Necessidade** = MIN(PD [Previsão Acordada], Requisição)
 - **Realizado** = Estoque + Consumo + Expurgo
+
+**Sem Expurgo**
+- **Necessidade** = MIN(PD replanejado, Requisição), onde PD replanejado = Revisão (Replanejamento) quando preenchida, senão Previsão (Replanejamento)
+- **Realizado** = Estoque + Consumo (o Expurgo não entra na conta)
+
+Em ambos os modos:
 - **Disponibilidade** = Realizado / Necessidade, limitada a 100% por chave (empresa-regional-SKU)
 - **Meta do indicador**: 93%
 - Chave de junção: empresa–regional–SKU, com regional convertido pela tabela DE-PARA
 - Requisição filtrada por `situacao_carta` em [T, A, P, E, D] ou vazio, e por `data_necessidade` no mês de apuração
 - Consumo filtrado pela classe de material 54, valores negativos tratados como zero
-- Meses Jan–Jul/2026 foram carregados de uma apuração externa (sem recálculo); a partir de Ago/2026 o cálculo passa a ser feito neste painel, a cada upload mensal
+- Meses Jan–Jul/2026 foram carregados de uma apuração externa (sem recálculo), nos dois modos; a partir de Ago/2026 o cálculo passa a ser feito neste painel — cada upload mensal já calcula automaticamente os dois modos a partir dos mesmos 5 arquivos-fonte.
