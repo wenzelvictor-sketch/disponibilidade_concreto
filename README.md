@@ -43,17 +43,19 @@ Este painel foi originalmente construído para rodar dentro do Claude.ai, onde e
 
 ### Como ter um resultado realmente compartilhado entre todos
 
-Para que a atualização mensal feita por uma pessoa apareça para todo mundo, existem duas opções, em ordem de esforço:
+Como só uma pessoa faz a atualização mensal, o próprio painel já resolve isso — **não é preciso voltar ao Claude todo mês**:
 
-**Opção A — a mais simples (recomendada para uso mensal):**
-1. A pessoa responsável abre o painel (localmente ou no Claude), faz o upload das 5 bases do mês pelo botão de admin.
-2. Usa o botão de download/exportar os dados calculados (ou peça para o Claude gerar um novo `index.html` já com aquele mês embutido no "seed", do mesmo jeito que foi feito para Jan–Jul).
-3. Substitui o `index.html` no repositório GitHub por essa nova versão.
-4. Todos que acessam o link já veem o mês novo — sem depender de `localStorage`.
+1. Abra o site publicado, clique no ⚙ discreto no rodapé, digite o código de acesso.
+2. Suba os 5 arquivos-fonte do mês e clique em **"Processar e salvar"**.
+3. Depois de processado, clique em **"⬇ Baixar index.html atualizado"** (mesmo modal) — isso baixa um novo `index.html` com **todos os meses até agora** (os antigos + o que você acabou de calcular) já embutidos como dado fixo do arquivo.
+4. Suba esse `index.html` no repositório do GitHub, substituindo o anterior (pelo site do GitHub: Add file → Upload files → arraste o arquivo → Commit; ou via `git add . && git commit -m "Atualização mês X" && git push`).
+5. Pronto — qualquer pessoa que abrir o link já vê o novo mês, sem precisar de nada além do link.
 
-Essa é a forma mais simples de manter todo mundo sincronizado sem precisar de um servidor: a cada mês fechado, gera-se um `index.html` novo com o histórico atualizado e sobe-se por cima do anterior.
+O botão "Baixar index.html atualizado" funciona a qualquer momento (não só depois de processar um mês novo) — ele sempre gera um arquivo com o estado atual de tudo que está carregado no seu navegador.
 
-**Opção B — backend real (mais trabalho, mas atualização automática para todos):**
+⚠️ Só um detalhe: se você abrir o painel em navegadores/computadores diferentes ao longo dos meses, cada um guarda seu próprio histórico local (`localStorage`) até você gerar e publicar o `index.html`. Recomendo sempre usar o mesmo navegador para as atualizações mensais, ou — mais seguro ainda — sempre partir do `index.html` que já está publicado no GitHub (baixe-o, abra localmente, faça a atualização, gere o novo e suba de novo) para nunca perder histórico.
+
+Se no futuro a organização quiser eliminar até esse passo manual de subir o arquivo (ex.: múltiplas pessoas atualizando), aí sim vale migrar para backend real:
 Trocar a camada de armazenamento por um backend simples (ex.: uma planilha do Google Sheets via API, um pequeno banco como Supabase/Firebase, ou uma GitHub Action que grava um arquivo JSON no próprio repositório a cada upload). Isso exige desenvolvimento adicional — fora do escopo deste pacote, mas o código já está isolado num único objeto `storage` (dentro do `<script>` do `index.html`, procure por `const storage =`), o que facilita trocar só essa parte no futuro.
 
 ---

@@ -463,10 +463,14 @@
     <div class="modal-error" id="uploadError"></div>
     <div class="progress-log" id="progressLog"></div>
 
-    <div class="modal-actions">
-      <button class="reset-btn" data-close="uploadOverlay">Cancelar</button>
-      <button class="btn primary" id="processBtn">Processar e salvar</button>
+    <div class="modal-actions" style="justify-content:space-between; flex-wrap:wrap;">
+      <button class="reset-btn" id="downloadIndexBtn" title="Gera um novo index.html com todos os meses carregados até agora, para publicar no repositório">⬇ Baixar index.html atualizado</button>
+      <div style="display:flex; gap:10px;">
+        <button class="reset-btn" data-close="uploadOverlay">Cancelar</button>
+        <button class="btn primary" id="processBtn">Processar e salvar</button>
+      </div>
     </div>
+    <p class="hint" style="margin-top:10px;">Depois de processar um mês (ou a qualquer momento), clique em "Baixar index.html atualizado" e suba esse arquivo no repositório do GitHub — é assim que as outras pessoas passam a ver os dados novos.</p>
   </div>
 </div>
 
@@ -476,6 +480,10 @@ const SEED_MESES = {"order": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-
 <script>
 (function(){
 "use strict";
+
+/* Captura o HTML original da página (antes de qualquer alteração feita pelo
+   script) para permitir gerar um novo index.html com os dados atuais embutidos. */
+const PAGE_TEMPLATE_HTML = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
 
 /* ============================================================
    CONFIGURAÇÃO — altere aqui se precisar trocar o código de acesso
@@ -1251,6 +1259,37 @@ function openModal(id){ document.getElementById(id).classList.add("open"); }
 function closeModal(id){ document.getElementById(id).classList.remove("open"); }
 
 /* ============================================================
+   GERAR NOVO index.html COM OS DADOS ATUAIS EMBUTIDOS
+   ============================================================ */
+function buildUpdatedIndexHtml(){
+  const newSeed = { order: MESES_ORDER.slice(), months: {} };
+  MESES_ORDER.forEach(k => { newSeed.months[k] = MESES[k]; });
+  const newDecl = "const SEED_MESES = " + JSON.stringify(newSeed) + ";";
+  const re = /(<script>\s*)const SEED_MESES = [\s\S]*?;(\s*<\/script>)/;
+  if(!re.test(PAGE_TEMPLATE_HTML)){
+    throw new Error("Não foi possível localizar o bloco de dados (SEED_MESES) no HTML original.");
+  }
+  return PAGE_TEMPLATE_HTML.replace(re, (m, p1, p2) => p1 + newDecl + p2);
+}
+
+function downloadUpdatedIndexHtml(){
+  try{
+    const html = buildUpdatedIndexHtml();
+    const blob = new Blob([html], {type: "text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "index.html";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=> URL.revokeObjectURL(url), 2000);
+    return true;
+  }catch(e){
+    console.error("Falha ao gerar index.html atualizado:", e);
+    alert("Não foi possível gerar o arquivo. Detalhe: " + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
+/* ============================================================
    EXPORTAR PDF — Quadro Resumo + Disponibilidade Acumulada
    ============================================================ */
 async function downloadSummaryPdf(){
@@ -1340,6 +1379,8 @@ function wireAdminEvents(){
   });
   document.getElementById("gatePass").addEventListener("keydown", (e)=>{ if(e.key==="Enter") document.getElementById("gateSubmit").click(); });
 
+  document.getElementById("downloadIndexBtn").addEventListener("click", ()=> downloadUpdatedIndexHtml());
+
   document.getElementById("processBtn").addEventListener("click", async ()=>{
     const btn = document.getElementById("processBtn");
     const errHost = document.getElementById("uploadError");
@@ -1380,14 +1421,13 @@ function wireAdminEvents(){
       }
       await saveMonth(record);
       log("Mês salvo.", "ok");
-      await sleep(500);
-      closeModal("uploadOverlay");
       renderMonthSelect();
       document.getElementById("monthSelect").value = monthKey;
       document.getElementById("fMonth").value = monthKey;
       renderCurrentMonth(monthKey);
       renderAccumChart();
       renderSummaryTable();
+      log('Pronto. Clique em "Baixar index.html atualizado" acima e suba o arquivo no GitHub para que os outros vejam este mês.', "ok");
     }catch(e){
       console.error(e);
       log("Erro: "+(e && e.message ? e.message : String(e)), "err");
