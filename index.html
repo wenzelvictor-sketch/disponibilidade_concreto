@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
@@ -1142,6 +1143,10 @@ function wireTableStaticEvents(){
    RENDER — gráfico acumulado (Chart.js)
    ============================================================ */
 function renderAccumChart(){
+  if(window.ChartDataLabels && !window._datalabelsRegistered){
+    Chart.register(window.ChartDataLabels);
+    window._datalabelsRegistered = true;
+  }
   const ctx = document.getElementById("accumChart").getContext("2d");
   const labels = MESES_ORDER.map(k=> MESES[k] ? MESES[k].label : k);
   const empresasSet = new Set();
@@ -1151,7 +1156,16 @@ function renderAccumChart(){
   const datasets = [{
     label: "Total Geral",
     data: MESES_ORDER.map(k=> (MESES[k] && MESES[k].total!==null) ? MESES[k].total*100 : null),
-    borderColor: "#E7ECF3", backgroundColor:"#E7ECF3", borderWidth:2.5, pointRadius:3, tension:.25, order:0, spanGaps:true
+    borderColor: "#E7ECF3", backgroundColor:"#E7ECF3", borderWidth:2.5, pointRadius:3, tension:.25, order:0, spanGaps:true,
+    datalabels: {
+      display: true,
+      align: "top",
+      anchor: "end",
+      offset: 4,
+      color: "#E7ECF3",
+      font: {family: "'IBM Plex Mono'", size: 10, weight: "600"},
+      formatter: (v)=> v!==null && v!==undefined ? v.toFixed(1).replace(".",",")+"%" : ""
+    }
   }];
   empresasList.forEach((sigla,i)=>{
     const color = PALETTE[i % PALETTE.length];
@@ -1162,7 +1176,8 @@ function renderAccumChart(){
         const e = rec.empresas.find(x=>x.sigla===sigla);
         return (e && e.disponibilidade!==null) ? e.disponibilidade*100 : null;
       }),
-      borderColor: color, backgroundColor: color, borderWidth:1.5, pointRadius:2, tension:.25, hidden:true, order:1, spanGaps:true
+      borderColor: color, backgroundColor: color, borderWidth:1.5, pointRadius:2, tension:.25, hidden:true, order:1, spanGaps:true,
+      datalabels: {display: false}
     });
   });
 
@@ -1178,6 +1193,7 @@ function renderAccumChart(){
       },
       plugins:{
         legend:{display:false},
+        datalabels:{display:false},
         tooltip:{callbacks:{label:c=> c.dataset.label+": "+(c.parsed.y!==null? c.parsed.y.toFixed(1).replace(".",",")+"%":"—")}}
       }
     }
