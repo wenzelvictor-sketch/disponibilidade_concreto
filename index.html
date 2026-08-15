@@ -1309,7 +1309,15 @@ function renderAccumChart(){
       label: sigla,
       data: empresaSeries[sigla],
       borderColor: color, backgroundColor: color, borderWidth:1.5, pointRadius:2, tension:.25, hidden:true, order:1, spanGaps:true,
-      datalabels: {display: false}
+      datalabels: {
+        display: true,
+        align: "bottom",
+        anchor: "end",
+        offset: 4,
+        color: color,
+        font: {family: "'IBM Plex Mono'", size: 9, weight: "600"},
+        formatter: (v)=> v!==null && v!==undefined ? v.toFixed(1).replace(".",",")+"%" : ""
+      }
     });
   });
 
