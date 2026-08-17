@@ -245,6 +245,9 @@
   }
   .pdf-btn-row{ display:flex; justify-content:flex-end; margin-top:16px; }
   #pdfDownloadBtn:disabled{ opacity:.5; cursor:progress; }
+  .modal-divider{ border:none; border-top:1px solid var(--border); margin:22px 0 16px; }
+  .modal-subtitle{ font-family:var(--font-display); font-size:14px; font-weight:600; margin-bottom:6px; }
+  .hint{ font-family:var(--font-body); font-size:11.5px; color:var(--muted-2); line-height:1.5; }
 
   @media (max-width: 640px){
     header{ padding:26px 16px 6px; }
@@ -499,6 +502,19 @@
       </div>
     </div>
     <p class="hint" style="margin-top:10px;">Depois de processar um mês (ou a qualquer momento), clique em "Baixar index.html atualizado" e suba esse arquivo no repositório do GitHub — é assim que as outras pessoas passam a ver os dados novos.</p>
+
+    <hr class="modal-divider">
+    <h3 class="modal-subtitle">Backup do histórico</h3>
+    <p class="desc">Guarde uma cópia de segurança dos dados independente do index.html — arquivo leve, fácil de anexar num e-mail ou guardar numa pasta. Recomendado sempre que processar um mês novo.</p>
+    <div class="modal-actions" style="justify-content:flex-start; gap:10px; margin-top:0;">
+      <button class="reset-btn" id="downloadBackupBtn">⬇ Baixar backup (.json)</button>
+    </div>
+
+    <div class="modal-field" style="margin-top:16px;">
+      <label for="fRestoreBackup">Restaurar backup (.json)</label>
+      <input type="file" id="fRestoreBackup" accept=".json">
+      <div class="hint">Sobrescreve, neste navegador, apenas os meses presentes no arquivo de backup escolhido. Útil se você trocar de computador/navegador ou perder os dados locais.</div>
+    </div>
   </div>
 </div>
 
@@ -533,9 +549,15 @@ function deriveReqModeRecord(semRec){
   if(!semRec) return null;
   const detail = semRec.detail.map(d=>{
     const necessidade = d.requisicao || 0;
-    const necessidade_r = necessidade * (d.valor_unitario || 0);
-    const realizado_r_capado = necessidade_r > 0 ? Math.min(d.realizado_r, necessidade_r) : 0;
-    return Object.assign({}, d, {necessidade, necessidade_r, realizado_r_capado});
+    const valorUnit = d.valor_unitario || 0;
+    // Recalcula o Realizado bruto (Estoque+Consumo+Expurgo) em vez de usar o
+    // Realizado já capado do modo "sem expurgo" — senão perderíamos a
+    // informação de estoque disponível acima da necessidade daquele modo.
+    const realizadoBruto = (d.estoque||0) + (d.consumo||0) + (d.expurgo||0);
+    const necessidade_r = necessidade * valorUnit;
+    const realizado_r = realizadoBruto * valorUnit;
+    const realizado_r_capado = necessidade_r > 0 ? Math.min(realizado_r, necessidade_r) : 0;
+    return Object.assign({}, d, {necessidade, necessidade_r, realizado: realizadoBruto, realizado_r, realizado_r_capado});
   });
   const empresaAgg = new Map();
   detail.forEach(d=>{
@@ -1434,8 +1456,8 @@ function closeModal(id){ document.getElementById(id).classList.remove("open"); }
 /* ============================================================
    GERAR NOVO index.html COM OS DADOS ATUAIS EMBUTIDOS
    ============================================================ */
-function buildUpdatedIndexHtml(){
-  const newSeed = {
+function buildDataSnapshot(){
+  const snapshot = {
     order: MESES_ORDER.slice(),
     modes: {
       com: { months: {} },
@@ -1443,9 +1465,14 @@ function buildUpdatedIndexHtml(){
     }
   };
   MESES_ORDER.forEach(k => {
-    newSeed.modes.com.months[k] = MESES.com[k];
-    newSeed.modes.sem.months[k] = MESES.sem[k];
+    snapshot.modes.com.months[k] = MESES.com[k];
+    snapshot.modes.sem.months[k] = MESES.sem[k];
   });
+  return snapshot;
+}
+
+function buildUpdatedIndexHtml(){
+  const newSeed = buildDataSnapshot();
   const newDecl = "const SEED_MESES = " + JSON.stringify(newSeed) + ";";
   const re = /(<script>\s*)const SEED_MESES = [\s\S]*?;(\s*<\/script>)/;
   if(!re.test(PAGE_TEMPLATE_HTML)){
@@ -1469,6 +1496,53 @@ function downloadUpdatedIndexHtml(){
     alert("Não foi possível gerar o arquivo. Detalhe: " + (e && e.message ? e.message : e));
     return false;
   }
+}
+
+/* ============================================================
+   BACKUP / RESTAURAÇÃO DOS DADOS (JSON leve, independente do
+   index.html — serve como cópia de segurança do histórico)
+   ============================================================ */
+function downloadBackupJson(){
+  try{
+    const snapshot = buildDataSnapshot();
+    snapshot.exportedAt = new Date().toISOString();
+    const json = JSON.stringify(snapshot);
+    const blob = new Blob([json], {type: "application/json;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().slice(0,10);
+    const a = document.createElement("a");
+    a.href = url; a.download = `backup_disponibilidade_concreto_${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=> URL.revokeObjectURL(url), 2000);
+    return true;
+  }catch(e){
+    console.error("Falha ao gerar backup:", e);
+    alert("Não foi possível gerar o backup. Detalhe: " + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
+async function restoreFromBackupFile(file, log){
+  const text = await file.text();
+  let parsed;
+  try{ parsed = JSON.parse(text); }
+  catch(e){ throw new Error("Arquivo inválido — não é um JSON legível."); }
+  if(!parsed || !Array.isArray(parsed.order) || !parsed.modes || !parsed.modes.com || !parsed.modes.sem){
+    throw new Error("Arquivo não tem o formato esperado de backup deste painel.");
+  }
+  const meses = parsed.order;
+  if(!window.confirm(`Isso vai sobrescrever, no seu navegador, os dados dos ${meses.length} mês(es) presentes neste backup (${meses.join(", ")}). Meses não incluídos no backup não são afetados. Deseja continuar?`)){
+    return false;
+  }
+  for(const key of meses){
+    const recCom = parsed.modes.com.months[key];
+    const recSem = parsed.modes.sem.months[key];
+    if(!recCom || !recSem){ if(log) log(`Pulando ${key}: incompleto no backup.`, "err"); continue; }
+    await saveMonthBoth(key, recCom, recSem);
+    if(log) log(`Restaurado: ${key}`, "ok");
+  }
+  MESES.req = {};
+  return true;
 }
 
 /* ============================================================
@@ -1562,6 +1636,39 @@ function wireAdminEvents(){
   document.getElementById("gatePass").addEventListener("keydown", (e)=>{ if(e.key==="Enter") document.getElementById("gateSubmit").click(); });
 
   document.getElementById("downloadIndexBtn").addEventListener("click", ()=> downloadUpdatedIndexHtml());
+  document.getElementById("downloadBackupBtn").addEventListener("click", ()=> downloadBackupJson());
+
+  document.getElementById("fRestoreBackup").addEventListener("change", async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const logHost = document.getElementById("progressLog");
+    const log = (msg, cls)=>{
+      const d = document.createElement("div");
+      if(cls) d.className = cls;
+      d.textContent = msg;
+      logHost.appendChild(d);
+      logHost.scrollTop = logHost.scrollHeight;
+    };
+    logHost.classList.add("show");
+    try{
+      const ok = await restoreFromBackupFile(file, log);
+      if(ok){
+        renderMonthSelect();
+        const key = document.getElementById("monthSelect").value;
+        renderCurrentMonth(key);
+        renderAccumChart();
+        renderSummaryTable();
+        log("Restauração concluída.", "ok");
+      } else {
+        log("Restauração cancelada.");
+      }
+    }catch(err){
+      console.error(err);
+      log("Erro ao restaurar: " + (err && err.message ? err.message : err), "err");
+    }finally{
+      e.target.value = "";
+    }
+  });
 
   document.getElementById("processBtn").addEventListener("click", async ()=>{
     const btn = document.getElementById("processBtn");

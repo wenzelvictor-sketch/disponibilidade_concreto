@@ -74,6 +74,25 @@ Se a organização precisar de controle de acesso de verdade (só pessoas autori
 
 ---
 
+## 3.5. Backup do histórico — como não perder as apurações
+
+O histórico completo hoje vive em dois lugares, com níveis diferentes de segurança:
+
+**Nível 1 — `localStorage` do navegador (frágil, não é backup de verdade)**
+Enquanto você não gera e publica um novo `index.html`, os meses que você processa ficam salvos só no `localStorage` daquele navegador específico. Se limpar os dados do navegador, trocar de computador, ou usar outra aba/perfil, esse histórico "solto" pode sumir.
+
+**Nível 2 — o `index.html` publicado no GitHub (já é um backup, sem esforço extra)**
+Todo `index.html` que você gera pelo botão "Baixar index.html atualizado" já carrega o histórico completo embutido dentro dele. Isso significa que **o histórico de commits do GitHub já funciona como backup versionado**: cada vez que você sobe um `index.html` novo, o GitHub guarda a versão anterior para sempre (Settings não precisa de nada especial — é o comportamento padrão do Git). Se precisar recuperar um mês antigo, dá pra abrir o histórico do arquivo no GitHub (ícone de relógio/"History" na página do arquivo) e baixar qualquer versão passada.
+
+**Nível 3 — backup dedicado em `.json` (recomendado, mais leve e portátil)**
+No mesmo modal de upload (⚙ → código de acesso), há uma seção "Backup do histórico" com dois botões:
+- **"⬇ Baixar backup (.json)"** — gera um arquivo pequeno (só os dados, sem todo o HTML/CSS/JS) com todos os meses carregados. Guarde esse arquivo num e-mail, num Drive, ou junto com os arquivos-fonte de cada mês — é sua cópia de segurança independente do site.
+- **"Restaurar backup (.json)"** — se algum dia o navegador perder os dados (ou você estiver começando do zero num computador novo), selecione um backup `.json` salvo anteriormente para repor o histórico. Restaura só os meses presentes no arquivo escolhido, sem apagar meses que já estiverem lá.
+
+**Recomendação prática**: depois de processar o mês, baixe tanto o `index.html` atualizado (para publicar) quanto o backup `.json` (para guardar à parte) — assim você tem duas cópias independentes, e o Git do GitHub garante uma terceira, com histórico de todas as versões anteriores.
+
+---
+
 ## 4. Estrutura deste pacote
 
 ```
@@ -81,7 +100,7 @@ index.html   → o painel completo (HTML + CSS + JS), pronto para publicar
 README.md    → este arquivo
 ```
 
-Não há dependências de build — é um arquivo estático único. As únicas bibliotecas externas usadas (SheetJS para ler Excel e Chart.js para o gráfico acumulado) são carregadas via CDN (`cdnjs.cloudflare.com`) direto no `<head>` do HTML; a máquina de quem acessa precisa de internet para carregá-las.
+Não há dependências de build — é um arquivo estático único. As únicas bibliotecas externas usadas (SheetJS para ler Excel, Chart.js e chartjs-plugin-datalabels para o gráfico acumulado, html2canvas e jsPDF para exportar o PDF) são carregadas via CDN (`cdnjs.cloudflare.com`) direto no `<head>` do HTML; a máquina de quem acessa precisa de internet para carregá-las.
 
 ---
 
