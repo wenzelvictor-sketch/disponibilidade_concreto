@@ -84,12 +84,13 @@ Enquanto você não gera e publica um novo `index.html`, os meses que você proc
 **Nível 2 — o `index.html` publicado no GitHub (já é um backup, sem esforço extra)**
 Todo `index.html` que você gera pelo botão "Baixar index.html atualizado" já carrega o histórico completo embutido dentro dele. Isso significa que **o histórico de commits do GitHub já funciona como backup versionado**: cada vez que você sobe um `index.html` novo, o GitHub guarda a versão anterior para sempre (Settings não precisa de nada especial — é o comportamento padrão do Git). Se precisar recuperar um mês antigo, dá pra abrir o histórico do arquivo no GitHub (ícone de relógio/"History" na página do arquivo) e baixar qualquer versão passada.
 
-**Nível 3 — backup dedicado em `.json` (recomendado, mais leve e portátil)**
-No mesmo modal de upload (⚙ → código de acesso), há uma seção "Backup do histórico" com dois botões:
-- **"⬇ Baixar backup (.json)"** — gera um arquivo pequeno (só os dados, sem todo o HTML/CSS/JS) com todos os meses carregados. Guarde esse arquivo num e-mail, num Drive, ou junto com os arquivos-fonte de cada mês — é sua cópia de segurança independente do site.
+**Nível 3 — backup dedicado (recomendado, mais leve e portátil)**
+No mesmo modal de upload (⚙ → código de acesso), há uma seção "Backup do histórico" com três botões:
+- **"⬇ Baixar backup (.json)"** — gera um arquivo pequeno (só os dados, sem todo o HTML/CSS/JS) com todos os meses carregados, nos 3 modos de cálculo. Guarde esse arquivo num e-mail, num Drive, ou junto com os arquivos-fonte de cada mês — é sua cópia de segurança independente do site, e é o formato que a opção "Restaurar backup" abaixo consegue ler de volta.
+- **"⬇ Baixar backup (.xlsx)"** — a mesma informação, só que já achatada em tabela (abas Leia-me, Detalhe e Resumo por Empresa), pronta para abrir e conferir direto no Excel, sem precisar de Power Query. Não serve para restaurar dados no painel — é só para inspeção manual.
 - **"Restaurar backup (.json)"** — se algum dia o navegador perder os dados (ou você estiver começando do zero num computador novo), selecione um backup `.json` salvo anteriormente para repor o histórico. Restaura só os meses presentes no arquivo escolhido, sem apagar meses que já estiverem lá.
 
-**Recomendação prática**: depois de processar o mês, baixe tanto o `index.html` atualizado (para publicar) quanto o backup `.json` (para guardar à parte) — assim você tem duas cópias independentes, e o Git do GitHub garante uma terceira, com histórico de todas as versões anteriores.
+**Recomendação prática**: depois de processar o mês, baixe o `index.html` atualizado (para publicar), o backup `.json` (para poder restaurar depois) e, se quiser conferir os números com calma, o backup `.xlsx` também — assim você tem cópias independentes em formatos diferentes, e o Git do GitHub garante mais uma, com histórico de todas as versões anteriores.
 
 ---
 

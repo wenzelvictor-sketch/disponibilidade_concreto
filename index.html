@@ -505,9 +505,10 @@
 
     <hr class="modal-divider">
     <h3 class="modal-subtitle">Backup do histórico</h3>
-    <p class="desc">Guarde uma cópia de segurança dos dados independente do index.html — arquivo leve, fácil de anexar num e-mail ou guardar numa pasta. Recomendado sempre que processar um mês novo.</p>
+    <p class="desc">Guarde uma cópia de segurança dos dados independente do index.html. O <b>.json</b> é o formato para restaurar o histórico dentro do painel (botão abaixo). O <b>.xlsx</b> é para conferência manual dos números — mesmas 3 abas (Leia-me, Detalhe, Resumo por Empresa), não serve para restaurar. Recomendado baixar os dois sempre que processar um mês novo.</p>
     <div class="modal-actions" style="justify-content:flex-start; gap:10px; margin-top:0;">
       <button class="reset-btn" id="downloadBackupBtn">⬇ Baixar backup (.json)</button>
+      <button class="reset-btn" id="downloadBackupXlsxBtn">⬇ Baixar backup (.xlsx)</button>
     </div>
 
     <div class="modal-field" style="margin-top:16px;">
@@ -1522,6 +1523,122 @@ function downloadBackupJson(){
   }
 }
 
+/* ============================================================
+   BACKUP EM EXCEL (.xlsx) — mesma lógica dos 3 modos, achatada
+   em tabela, para conferência manual fora do painel.
+   ============================================================ */
+function collectFlattenedRows(){
+  const rows = [];
+  MESES_ORDER.forEach(key=>{
+    const comRec = MESES.com[key];
+    const semRec = MESES.sem[key];
+    const reqRec = getReqRecord(key);
+    const label = (comRec && comRec.label) || (semRec && semRec.label) || key;
+    [["Com Expurgo", comRec], ["Sem Expurgo", semRec], ["Nec. = Requisição", reqRec]].forEach(([modo, rec])=>{
+      if(!rec) return;
+      rec.detail.forEach(d=>{
+        const necessidade = d.necessidade||0;
+        const realizado = d.realizado||0;
+        const necR = d.necessidade_r||0;
+        const realR = d.realizado_r||0;
+        const realRCap = d.realizado_r_capado||0;
+        rows.push([
+          label, modo, d.empresa, d.regional, d.sku,
+          d.pd||0, d.requisicao||0, necessidade,
+          d.estoque||0, d.consumo||0, d.expurgo||0, realizado,
+          necessidade>0 ? Math.min(realizado/necessidade,1) : null,
+          d.valor_unitario||0, necR, realR,
+          necR>0 ? Math.min(realRCap/necR,1) : null
+        ]);
+      });
+    });
+  });
+  return rows;
+}
+
+function collectResumoRows(){
+  const empresasSet = new Set();
+  MESES_ORDER.forEach(k=>{ (MESES.com[k]?.empresas||[]).forEach(e=>empresasSet.add(e.sigla)); });
+  const empresas = Array.from(empresasSet).sort();
+  const modosMap = [["Com Expurgo", MESES.com], ["Sem Expurgo", MESES.sem], ["Nec. = Requisição", null]];
+  const rows = [];
+  modosMap.forEach(([modo, modeStore])=>{
+    empresas.forEach(sigla=>{
+      const row = [modo, sigla];
+      MESES_ORDER.forEach(key=>{
+        const rec = modo==="Nec. = Requisição" ? getReqRecord(key) : (modeStore ? modeStore[key] : null);
+        const e = rec ? rec.empresas.find(x=>x.sigla===sigla) : null;
+        row.push(e && e.necessidade_r>0 ? Math.min(e.realizado_r/e.necessidade_r,1) : null);
+      });
+      rows.push(row);
+    });
+  });
+  return {empresas, rows};
+}
+
+function downloadBackupXlsx(){
+  try{
+    const wb = XLSX.utils.book_new();
+
+    // Leia-me
+    const leiame = [
+      ["Backup do Histórico — Disponibilidade Concreto"],
+      [""],
+      ["Gerado em", new Date().toLocaleString("pt-BR")],
+      [""],
+      ["Modos de cálculo", ""],
+      ["Com Expurgo", "Necessidade = MIN(PD [Previsão Acordada], Requisição). Realizado = Estoque + Consumo + Expurgo."],
+      ["Sem Expurgo", "Necessidade = MIN(PD replanejado, Requisição). Realizado = Estoque + Consumo (sem Expurgo)."],
+      ["Nec. = Requisição", "Necessidade = Qtd Requisitada diretamente. Realizado = Estoque + Consumo."],
+      ["Disponibilidade (todos os modos)", "Realizado / Necessidade, limitada a 100% por chave."],
+      ["Meta do indicador", "93%"],
+      [""],
+      ["Este arquivo é só para conferência manual.", "Para restaurar dados dentro do painel, use o backup em .json."]
+    ];
+    const wsLeiame = XLSX.utils.aoa_to_sheet(leiame);
+    wsLeiame["!cols"] = [{wch:32},{wch:90}];
+    XLSX.utils.book_append_sheet(wb, wsLeiame, "Leia-me");
+
+    // Detalhe
+    const headerDet = ["Mês","Modo","Empresa","Regional","SKU","PD","Requisição","Necessidade",
+                        "Estoque","Consumo","Expurgo","Realizado","Disponibilidade_Qtd",
+                        "Valor_Unitario","Necessidade_R$","Realizado_R$","Disponibilidade_Valor"];
+    const detRows = collectFlattenedRows();
+    const wsDet = XLSX.utils.aoa_to_sheet([headerDet, ...detRows]);
+    wsDet["!cols"] = [{wch:10},{wch:17},{wch:9},{wch:9},{wch:8},{wch:8},{wch:10},{wch:11},
+                       {wch:9},{wch:9},{wch:8},{wch:10},{wch:16},{wch:12},{wch:14},{wch:14},{wch:16}];
+    const pctCols = [12,16]; // Disponibilidade_Qtd, Disponibilidade_Valor (0-indexed)
+    for(let r=1; r<=detRows.length; r++){
+      pctCols.forEach(ci=>{
+        const addr = XLSX.utils.encode_cell({r, c:ci});
+        if(wsDet[addr] && typeof wsDet[addr].v === "number") wsDet[addr].z = "0.0%";
+      });
+    }
+    XLSX.utils.book_append_sheet(wb, wsDet, "Detalhe");
+
+    // Resumo por Empresa
+    const {empresas, rows: resumoRows} = collectResumoRows();
+    const headerRes = ["Modo","Empresa", ...MESES_ORDER.map(k=> (MESES.com[k]||MESES.sem[k])?.label || k)];
+    const wsRes = XLSX.utils.aoa_to_sheet([headerRes, ...resumoRows]);
+    wsRes["!cols"] = [{wch:17},{wch:9}, ...MESES_ORDER.map(()=>({wch:11}))];
+    for(let r=1; r<=resumoRows.length; r++){
+      for(let ci=2; ci<headerRes.length; ci++){
+        const addr = XLSX.utils.encode_cell({r, c:ci});
+        if(wsRes[addr] && typeof wsRes[addr].v === "number") wsRes[addr].z = "0.0%";
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, wsRes, "Resumo por Empresa");
+
+    const stamp = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `backup_disponibilidade_concreto_${stamp}.xlsx`);
+    return true;
+  }catch(e){
+    console.error("Falha ao gerar backup em Excel:", e);
+    alert("Não foi possível gerar o Excel. Detalhe: " + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
 async function restoreFromBackupFile(file, log){
   const text = await file.text();
   let parsed;
@@ -1637,6 +1754,7 @@ function wireAdminEvents(){
 
   document.getElementById("downloadIndexBtn").addEventListener("click", ()=> downloadUpdatedIndexHtml());
   document.getElementById("downloadBackupBtn").addEventListener("click", ()=> downloadBackupJson());
+  document.getElementById("downloadBackupXlsxBtn").addEventListener("click", ()=> downloadBackupXlsx());
 
   document.getElementById("fRestoreBackup").addEventListener("change", async (e)=>{
     const file = e.target.files[0];
