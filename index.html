@@ -1250,8 +1250,8 @@ function renderDetailArea(rec){
   setupTableFor(rec);
 }
 
-function setupTableFor(rec){
-  tableRows = rec.detail.map(d=>{
+function mapRecordToRows(rec){
+  return rec.detail.map(d=>{
     const necessidade = d.necessidade||0;
     const realizado = d.realizado||0;
     const disp = necessidade>0 ? Math.min(realizado/necessidade,1) : null;
@@ -1259,6 +1259,10 @@ function setupTableFor(rec){
              necessidade, necessidadeR:d.necessidade_r||0, estoque:d.estoque||0, consumo:d.consumo||0,
              realizado, realizadoR:d.realizado_r||0, expurgo:d.expurgo||0, disp};
   });
+}
+
+function setupTableFor(rec){
+  tableRows = mapRecordToRows(rec);
   const empresas = [...new Set(tableRows.map(r=>r.empresa))].sort();
   const regionais = [...new Set(tableRows.map(r=>r.regional))].sort((a,b)=>Number(a)-Number(b));
   const fEmpresa = document.getElementById("fEmpresa"), fRegional = document.getElementById("fRegional");
@@ -1273,23 +1277,30 @@ function setupTableFor(rec){
 }
 
 function getFilteredSortedRows(){
+  const predicate = buildFilterPredicate();
+  let filtered = tableRows.filter(predicate);
+  filtered.sort(rowComparator);
+  return filtered;
+}
+
+function buildFilterPredicate(){
   const fEmpresa=document.getElementById("fEmpresa"), fRegional=document.getElementById("fRegional");
   const fSku=document.getElementById("fSku"), fDisp=document.getElementById("fDisp");
   const ve=fEmpresa.value, vr=fRegional.value, vs=fSku.value.trim().toLowerCase(), vd=fDisp.value;
-  let filtered = tableRows.filter(r=>{
+  return (r)=>{
     if(ve && r.empresa!==ve) return false;
     if(vr && r.regional!==vr) return false;
     if(vs && !r.sku.toLowerCase().includes(vs)) return false;
     if(vd && dispClass(r.disp)!==vd) return false;
     return true;
-  });
-  filtered.sort((a,b)=>{
-    let av=a[sortKey], bv=b[sortKey];
-    if(sortKey==="disp"){ av = av===null?-1:av; bv = bv===null?-1:bv; }
-    if(typeof av==="string") return sortDir*av.localeCompare(bv, undefined, {numeric:true});
-    return sortDir*((av||0)-(bv||0));
-  });
-  return filtered;
+  };
+}
+
+function rowComparator(a,b){
+  let av=a[sortKey], bv=b[sortKey];
+  if(sortKey==="disp"){ av = av===null?-1:av; bv = bv===null?-1:bv; }
+  if(typeof av==="string") return sortDir*av.localeCompare(bv, undefined, {numeric:true});
+  return sortDir*((av||0)-(bv||0));
 }
 
 function renderTable(){
@@ -1751,27 +1762,32 @@ async function restoreFromBackupFile(file, log){
    ============================================================ */
 function downloadDetalheXlsx(){
   try{
-    const rows = getFilteredSortedRows();
-    if(rows.length===0){ alert("Não há linhas para exportar com os filtros atuais."); return false; }
+    const predicate = buildFilterPredicate();
+    const allRows = [];
+    MESES_ORDER.forEach(key=>{
+      const rec = curMeses()[key];
+      if(!rec || !rec.detail) return;
+      const monthRows = mapRecordToRows(rec).filter(predicate);
+      monthRows.sort(rowComparator);
+      monthRows.forEach(r=> allRows.push(Object.assign({mesLabel: rec.label}, r)));
+    });
+    if(allRows.length===0){ alert("Não há linhas para exportar com os filtros atuais."); return false; }
 
-    const monthKey = document.getElementById("monthSelect")?.value || "";
-    const monthLbl = curMeses()[monthKey] ? curMeses()[monthKey].label : monthKey;
     const modeLabels = {com:"Com Expurgo", sem:"Sem Expurgo", req:"Nec. = Requisição"};
-
-    const header = ["Empresa","Regional","SKU","Qtd PD","Qtd Requisitada","Necessidade","Necessidade (R$)",
+    const header = ["Mês","Empresa","Regional","SKU","Qtd PD","Qtd Requisitada","Necessidade","Necessidade (R$)",
                      "Estoque Total","Consumo","Realizado","Realizado (R$)","Expurgo","Disponibilidade"];
     const aoa = [
-      [`Mês: ${monthLbl}`, `Modo: ${modeLabels[VIEW_MODE]||VIEW_MODE}`],
+      [`Modo: ${modeLabels[VIEW_MODE]||VIEW_MODE}`, `Meses incluídos: ${MESES_ORDER.length}`],
       [""],
       header
     ];
-    rows.forEach(r=>{
-      aoa.push([r.empresa, r.regional, r.sku, r.pd, r.requisicao, r.necessidade, r.necessidadeR,
+    allRows.forEach(r=>{
+      aoa.push([r.mesLabel, r.empresa, r.regional, r.sku, r.pd, r.requisicao, r.necessidade, r.necessidadeR,
                  r.estoque, r.consumo, r.realizado, r.realizadoR, r.expurgo, r.disp]);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{wch:10},{wch:9},{wch:9},{wch:9},{wch:15},{wch:12},{wch:15},{wch:13},{wch:10},{wch:11},{wch:14},{wch:9},{wch:15}];
+    ws["!cols"] = [{wch:10},{wch:10},{wch:9},{wch:9},{wch:9},{wch:15},{wch:12},{wch:15},{wch:13},{wch:10},{wch:11},{wch:14},{wch:9},{wch:15}];
     const dispCol = header.length - 1;
     for(let r=3; r<aoa.length; r++){
       const dispAddr = XLSX.utils.encode_cell({r, c:dispCol});
@@ -1782,7 +1798,7 @@ function downloadDetalheXlsx(){
 
     const modeFile = {com:"com_expurgo", sem:"sem_expurgo", req:"nec_requisicao"}[VIEW_MODE] || VIEW_MODE;
     const stamp = new Date().toISOString().slice(0,10);
-    XLSX.writeFile(wb, `detalhe_${monthKey||"mes"}_${modeFile}_${stamp}.xlsx`);
+    XLSX.writeFile(wb, `detalhe_todos_meses_${modeFile}_${stamp}.xlsx`);
     return true;
   }catch(e){
     console.error("Falha ao gerar Excel (Detalhe por Chave):", e);
