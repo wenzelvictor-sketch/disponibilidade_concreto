@@ -242,7 +242,7 @@
     position:absolute; top:0; bottom:0; width:0;
     border-left:2px dashed rgba(231,236,243,.65); z-index:2;
   }
-  .pdf-btn-row{ display:flex; justify-content:flex-end; margin-top:16px; }
+  .pdf-btn-row{ display:flex; justify-content:flex-end; gap:10px; margin-top:16px; flex-wrap:wrap; }
   #pdfDownloadBtn:disabled{ opacity:.5; cursor:progress; }
   .modal-divider{ border:none; border-top:1px solid var(--border); margin:22px 0 16px; }
   .modal-subtitle{ font-family:var(--font-display); font-size:14px; font-weight:600; margin-bottom:6px; }
@@ -358,6 +358,7 @@
     </div>
     <div class="table-wrap" style="max-height:420px;" id="summaryTableHost"></div>
     <div class="pdf-btn-row">
+      <button class="btn" id="xlsxDownloadBtn">⬇ Baixar Excel (Resumo + Acumulado)</button>
       <button class="btn" id="pdfDownloadBtn">⬇ Baixar PDF (Resumo + Acumulado)</button>
     </div>
   </section>
@@ -1733,6 +1734,81 @@ async function restoreFromBackupFile(file, log){
 /* ============================================================
    EXPORTAR PDF — Quadro Resumo + Disponibilidade Acumulada
    ============================================================ */
+/* ============================================================
+   EXPORTAR EXCEL — Quadro Resumo + Disponibilidade Acumulada
+   (mesmo escopo do botão de PDF: reflete o modo de cálculo
+   atualmente selecionado — Com Expurgo / Sem Expurgo / Nec.=Requisição)
+   ============================================================ */
+function downloadResumoAcumuladoXlsx(){
+  try{
+    const wb = XLSX.utils.book_new();
+    const modeLabels = {com:"Com Expurgo", sem:"Sem Expurgo", req:"Nec. = Requisição"};
+
+    // --- aba: Resumo por Empresa ---
+    const empresasSet = new Set();
+    MESES_ORDER.forEach(k=> (curMeses()[k]?.empresas||[]).forEach(e=>empresasSet.add(e.sigla)));
+    const empresas = Array.from(empresasSet).sort();
+    const monthLabels = MESES_ORDER.map(k=> curMeses()[k]?.label || k);
+
+    const rows1 = [["Modo: " + (modeLabels[VIEW_MODE]||VIEW_MODE)], [""], ["Empresa", ...monthLabels]];
+    empresas.forEach(sigla=>{
+      const row = [sigla];
+      MESES_ORDER.forEach(k=>{
+        const rec = curMeses()[k];
+        const e = rec ? rec.empresas.find(x=>x.sigla===sigla) : null;
+        row.push(e && e.disponibilidade!==null ? e.disponibilidade : null);
+      });
+      rows1.push(row);
+    });
+    const totalRow = ["Total Geral"];
+    MESES_ORDER.forEach(k=>{
+      const rec = curMeses()[k];
+      totalRow.push(rec && rec.total!==null ? rec.total : null);
+    });
+    rows1.push(totalRow);
+
+    const ws1 = XLSX.utils.aoa_to_sheet(rows1);
+    ws1["!cols"] = [{wch:14}, ...MESES_ORDER.map(()=>({wch:11}))];
+    for(let r=3; r<rows1.length; r++){
+      for(let c=1; c<rows1[2].length; c++){
+        const addr = XLSX.utils.encode_cell({r, c});
+        if(ws1[addr] && typeof ws1[addr].v === "number") ws1[addr].z = "0.0%";
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, ws1, "Resumo por Empresa");
+
+    // --- aba: Disponibilidade Acumulada ---
+    const { empresasList, totalSeries, empresaSeries } = computeCumulativeSeries();
+    const rows2 = [["Modo: " + (modeLabels[VIEW_MODE]||VIEW_MODE)], [""], ["Mês", "Total Geral", ...empresasList]];
+    MESES_ORDER.forEach((k,i)=>{
+      const row = [monthLabels[i], totalSeries[i]!==null ? totalSeries[i]/100 : null];
+      empresasList.forEach(sigla=>{
+        const v = empresaSeries[sigla][i];
+        row.push(v!==null ? v/100 : null);
+      });
+      rows2.push(row);
+    });
+    const ws2 = XLSX.utils.aoa_to_sheet(rows2);
+    ws2["!cols"] = [{wch:11},{wch:12}, ...empresasList.map(()=>({wch:10}))];
+    for(let r=3; r<rows2.length; r++){
+      for(let c=1; c<rows2[2].length; c++){
+        const addr = XLSX.utils.encode_cell({r, c});
+        if(ws2[addr] && typeof ws2[addr].v === "number") ws2[addr].z = "0.0%";
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, ws2, "Disponibilidade Acumulada");
+
+    const modeFile = {com:"com_expurgo", sem:"sem_expurgo", req:"nec_requisicao"}[VIEW_MODE] || VIEW_MODE;
+    const stamp = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `resumo_acumulado_${modeFile}_${stamp}.xlsx`);
+    return true;
+  }catch(e){
+    console.error("Falha ao gerar Excel (Resumo + Acumulado):", e);
+    alert("Não foi possível gerar o Excel. Detalhe: " + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
 async function downloadSummaryPdf(){
   const btn = document.getElementById("pdfDownloadBtn");
   if(!btn) return;
@@ -1950,6 +2026,10 @@ function wireAdminEvents(){
     const btn = document.getElementById("pdfDownloadBtn");
     if(btn) btn.addEventListener("click", downloadSummaryPdf);
   }, "pdfButtonWiring");
+  safe(()=>{
+    const btn = document.getElementById("xlsxDownloadBtn");
+    if(btn) btn.addEventListener("click", downloadResumoAcumuladoXlsx);
+  }, "xlsxButtonWiring");
 })();
 
 })();
