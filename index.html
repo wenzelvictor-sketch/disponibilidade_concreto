@@ -403,6 +403,7 @@
           </select>
         </div>
         <button class="reset-btn" id="resetBtn">Limpar filtros</button>
+        <button class="reset-btn" id="detalheXlsxBtn">⬇ Baixar Excel</button>
         <div class="result-count" id="resultCount"></div>
       </div>
 
@@ -416,9 +417,11 @@
               <th data-key="pd">Qtd PD<span class="arrow">▾</span></th>
               <th data-key="requisicao">Qtd Requisitada<span class="arrow">▾</span></th>
               <th data-key="necessidade">Necessidade<span class="arrow">▾</span></th>
+              <th data-key="necessidadeR">Necessidade (R$)<span class="arrow">▾</span></th>
               <th data-key="estoque">Estoque Total<span class="arrow">▾</span></th>
               <th data-key="consumo">Consumo<span class="arrow">▾</span></th>
               <th data-key="realizado">Realizado<span class="arrow">▾</span></th>
+              <th data-key="realizadoR">Realizado (R$)<span class="arrow">▾</span></th>
               <th data-key="expurgo">Expurgo<span class="arrow">▾</span></th>
               <th data-key="disp">Disponibilidade<span class="arrow">▾</span></th>
             </tr>
@@ -1253,7 +1256,8 @@ function setupTableFor(rec){
     const realizado = d.realizado||0;
     const disp = necessidade>0 ? Math.min(realizado/necessidade,1) : null;
     return {empresa:d.empresa, regional:String(d.regional), sku:String(d.sku), pd:d.pd||0, requisicao:d.requisicao||0,
-             necessidade, estoque:d.estoque||0, consumo:d.consumo||0, realizado, expurgo:d.expurgo||0, disp};
+             necessidade, necessidadeR:d.necessidade_r||0, estoque:d.estoque||0, consumo:d.consumo||0,
+             realizado, realizadoR:d.realizado_r||0, expurgo:d.expurgo||0, disp};
   });
   const empresas = [...new Set(tableRows.map(r=>r.empresa))].sort();
   const regionais = [...new Set(tableRows.map(r=>r.regional))].sort((a,b)=>Number(a)-Number(b));
@@ -1268,11 +1272,9 @@ function setupTableFor(rec){
   renderTable();
 }
 
-function renderTable(){
+function getFilteredSortedRows(){
   const fEmpresa=document.getElementById("fEmpresa"), fRegional=document.getElementById("fRegional");
   const fSku=document.getElementById("fSku"), fDisp=document.getElementById("fDisp");
-  const tbody=document.getElementById("tableBody"), resultCount=document.getElementById("resultCount"), emptyState=document.getElementById("emptyState");
-
   const ve=fEmpresa.value, vr=fRegional.value, vs=fSku.value.trim().toLowerCase(), vd=fDisp.value;
   let filtered = tableRows.filter(r=>{
     if(ve && r.empresa!==ve) return false;
@@ -1287,6 +1289,12 @@ function renderTable(){
     if(typeof av==="string") return sortDir*av.localeCompare(bv, undefined, {numeric:true});
     return sortDir*((av||0)-(bv||0));
   });
+  return filtered;
+}
+
+function renderTable(){
+  const tbody=document.getElementById("tableBody"), resultCount=document.getElementById("resultCount"), emptyState=document.getElementById("emptyState");
+  const filtered = getFilteredSortedRows();
 
   resultCount.textContent = filtered.length.toLocaleString("pt-BR")+" de "+tableRows.length.toLocaleString("pt-BR")+" registros";
   if(filtered.length===0){ tbody.innerHTML=""; emptyState.style.display="block"; return; }
@@ -1299,7 +1307,10 @@ function renderTable(){
     tr.innerHTML = `
       <td class="txt">${r.empresa}</td><td>${r.regional}</td><td>${r.sku}</td>
       <td>${fmtNum(r.pd)}</td><td>${fmtNum(r.requisicao)}</td><td>${fmtNum(r.necessidade)}</td>
-      <td>${fmtNum(r.estoque)}</td><td>${fmtNum(r.consumo)}</td><td>${fmtNum(r.realizado)}</td><td>${fmtNum(r.expurgo)}</td>
+      <td>R$ ${fmtR(r.necessidadeR)}</td>
+      <td>${fmtNum(r.estoque)}</td><td>${fmtNum(r.consumo)}</td><td>${fmtNum(r.realizado)}</td>
+      <td>R$ ${fmtR(r.realizadoR)}</td>
+      <td>${fmtNum(r.expurgo)}</td>
       <td><span class="pill ${cls}"><span class="dot"></span>${dispLabel(r.disp)}</span></td>`;
     frag.appendChild(tr);
   });
@@ -1320,6 +1331,7 @@ function wireTableStaticEvents(){
     document.getElementById("fDisp").value="";
     clearEmpresaHighlight();
   });
+  document.getElementById("detalheXlsxBtn").addEventListener("click", ()=> downloadDetalheXlsx());
   document.querySelectorAll("thead th").forEach(th=>{
     th.addEventListener("click", ()=>{
       const key = th.dataset.key;
@@ -1734,6 +1746,51 @@ async function restoreFromBackupFile(file, log){
 /* ============================================================
    EXPORTAR PDF — Quadro Resumo + Disponibilidade Acumulada
    ============================================================ */
+/* ============================================================
+   EXPORTAR EXCEL — Detalhe por chave (respeita filtros e ordenação ativos)
+   ============================================================ */
+function downloadDetalheXlsx(){
+  try{
+    const rows = getFilteredSortedRows();
+    if(rows.length===0){ alert("Não há linhas para exportar com os filtros atuais."); return false; }
+
+    const monthKey = document.getElementById("monthSelect")?.value || "";
+    const monthLbl = curMeses()[monthKey] ? curMeses()[monthKey].label : monthKey;
+    const modeLabels = {com:"Com Expurgo", sem:"Sem Expurgo", req:"Nec. = Requisição"};
+
+    const header = ["Empresa","Regional","SKU","Qtd PD","Qtd Requisitada","Necessidade","Necessidade (R$)",
+                     "Estoque Total","Consumo","Realizado","Realizado (R$)","Expurgo","Disponibilidade"];
+    const aoa = [
+      [`Mês: ${monthLbl}`, `Modo: ${modeLabels[VIEW_MODE]||VIEW_MODE}`],
+      [""],
+      header
+    ];
+    rows.forEach(r=>{
+      aoa.push([r.empresa, r.regional, r.sku, r.pd, r.requisicao, r.necessidade, r.necessidadeR,
+                 r.estoque, r.consumo, r.realizado, r.realizadoR, r.expurgo, r.disp]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{wch:10},{wch:9},{wch:9},{wch:9},{wch:15},{wch:12},{wch:15},{wch:13},{wch:10},{wch:11},{wch:14},{wch:9},{wch:15}];
+    const dispCol = header.length - 1;
+    for(let r=3; r<aoa.length; r++){
+      const dispAddr = XLSX.utils.encode_cell({r, c:dispCol});
+      if(ws[dispAddr] && typeof ws[dispAddr].v === "number") ws[dispAddr].z = "0.0%";
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Detalhe por Chave");
+
+    const modeFile = {com:"com_expurgo", sem:"sem_expurgo", req:"nec_requisicao"}[VIEW_MODE] || VIEW_MODE;
+    const stamp = new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, `detalhe_${monthKey||"mes"}_${modeFile}_${stamp}.xlsx`);
+    return true;
+  }catch(e){
+    console.error("Falha ao gerar Excel (Detalhe por Chave):", e);
+    alert("Não foi possível gerar o Excel. Detalhe: " + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
 /* ============================================================
    EXPORTAR EXCEL — Quadro Resumo + Disponibilidade Acumulada
    (mesmo escopo do botão de PDF: reflete o modo de cálculo
